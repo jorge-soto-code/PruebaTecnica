@@ -1,0 +1,12 @@
+# Archivo con las claves REALES (contraseña de la BD y API key).
+# Nunca se sube. Lo que sí se sube es config.example.php (la plantilla).
+config.php
+.env
+
+# Librerías que baja Composer (se reinstalan con "composer install").
+vendor/
+
+# Archivos de registro (logs) y basura del sistema
+*.log
+.DS_Store
+Thumbs.db
