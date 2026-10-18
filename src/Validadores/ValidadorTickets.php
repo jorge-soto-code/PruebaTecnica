@@ -91,7 +91,7 @@ final class ValidadorTickets
         if ($camposConError !== []) { // Si se encontró algún problema
             throw new ExcepcionApi('VALIDACION_FALLIDA', 'Los filtros enviados no son válidos', 422, $camposConError); // Responde 422 con el detalle
         }
-        
+
         return ['filtros' => $filtros, 'pagina' => $pagina, 'registrosPorPagina' => $registrosPorPagina]; // Entrega todo ya limpio
     }
 
@@ -112,5 +112,67 @@ final class ValidadorTickets
         }
 
         return (int) $valorEnTexto; // Devuelve el número ya convertido
+    }
+
+    // FASE 4 
+
+    /**
+     * Revisa el JSON de POST /tickets. Si algo está mal lanza 422 con la lista de campos.
+     * Devuelve los datos ya limpios: codigo_usuario, categoria_id, descripcion, prioridad, tecnico_id.
+     */
+    public function validarDatosParaCrearTicket(array $cuerpo): array
+    {
+        $camposConError = []; // Aquí se anotan los problemas encontrados
+        $codigoDelUsuario = isset($cuerpo['codigo_usuario']) && is_string($cuerpo['codigo_usuario']) ? trim($cuerpo['codigo_usuario']) : ''; // Texto sin espacios sobrantes
+        if ($codigoDelUsuario === '') { // Si falta o está vacío
+            $camposConError['codigo_usuario'] = 'Es obligatorio'; // Anota el error
+        }
+
+        $idDeLaCategoria = $this->leerIdObligatorio($cuerpo, 'categoria_id'); // Debe ser un número entero positivo
+        if ($idDeLaCategoria === null) { // Si no es válido
+            $camposConError['categoria_id'] = 'Es obligatoria y debe ser el número (id) de una categoría'; // Anota el error
+        }
+
+        $descripcion = isset($cuerpo['descripcion']) && is_string($cuerpo['descripcion']) ? trim($cuerpo['descripcion']) : ''; // Texto sin espacios sobrantes
+        $largoDeLaDescripcion = mb_strlen($descripcion); // Cuenta letras (no bytes: las tildes cuentan como una)
+        if ($largoDeLaDescripcion < 20 || $largoDeLaDescripcion > 1000) { // Fuera del rango permitido
+            $camposConError['descripcion'] = 'Debe tener entre 20 y 1000 caracteres (tiene ' . $largoDeLaDescripcion . ')'; // Anota el error
+        }
+
+        $prioridad = isset($cuerpo['prioridad']) && is_string($cuerpo['prioridad']) ? ucfirst(mb_strtolower(trim($cuerpo['prioridad']))) : ''; // "alta" se acepta como "Alta"
+        if (!in_array($prioridad, self::PRIORIDADES_VALIDAS, true)) { // Si no es una prioridad conocida
+            $camposConError['prioridad'] = 'Debe ser Alta, Media o Baja'; // Anota el error
+        }
+
+        $idDelTecnico = $this->leerIdObligatorio($cuerpo, 'tecnico_id'); // Debe ser un número entero positivo
+        if ($idDelTecnico === null) { // Si no es válido
+            $camposConError['tecnico_id'] = 'Es obligatorio y debe ser el número (id) de un técnico'; // Anota el error
+        }
+
+        if ($camposConError !== []) { // Si se encontró algún problema
+            throw new ExcepcionApi('VALIDACION_FALLIDA', 'Los datos del ticket no son válidos', 422, $camposConError); // Responde 422 con el detalle
+        }
+
+        return [ // Entrega los datos ya limpios
+            'codigo_usuario' => $codigoDelUsuario, // Código del solicitante
+            'categoria_id'   => $idDeLaCategoria, // Categoría
+            'descripcion'    => $descripcion, // Descripción
+            'prioridad'      => $prioridad, // Prioridad
+            'tecnico_id'     => $idDelTecnico, // Técnico
+        ];
+    }
+    /**
+     * Lee un campo del JSON que debe ser un entero positivo (acepta 3 o "3"). Devuelve null si no lo es.
+     */
+    private function leerIdObligatorio(array $cuerpo, string $nombreDelCampo): ?int
+    {
+        $valor = $cuerpo[$nombreDelCampo] ?? null; // Lee el campo (null si no vino)
+        if (is_int($valor) && $valor >= 1) { // Llegó como número entero válido
+            return $valor; // Lo devuelve tal cual
+        }
+        if (is_string($valor) && ctype_digit($valor) && (int) $valor >= 1) { // Llegó como texto con solo dígitos
+            return (int) $valor; // Lo convierte a número
+        }
+        return null; // No es válido
     }
 }

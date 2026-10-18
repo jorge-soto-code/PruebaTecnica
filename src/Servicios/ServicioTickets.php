@@ -26,9 +26,12 @@
 declare(strict_types=1); 
 namespace Aplicacion\Servicios; 
 
-use Aplicacion\Nucleo\ExcepcionApi; // Para lanzar 404
+use Aplicacion\Nucleo\BaseDeDatos; // Para abrir la transacción
+use Aplicacion\Nucleo\ExcepcionApi; // Para lanzar 404, 409 y 422
 use Aplicacion\Repositorios\RepositorioCategorias; // SQL de catálogos
+use Aplicacion\Repositorios\RepositorioConsecutivos; // Número de ticket
 use Aplicacion\Repositorios\RepositorioHistorial; // SQL del historial
+use Aplicacion\Repositorios\RepositorioTecnicos; // SQL de técnicos
 use Aplicacion\Repositorios\RepositorioTickets; // SQL de tickets
 use Aplicacion\Repositorios\RepositorioUsuarios; // SQL de usuarios
 use DateTimeImmutable; // Fecha y hora que no se modifica por accidente
@@ -41,6 +44,8 @@ final class ServicioTickets // "final": ninguna otra clase puede heredar de esta
     private RepositorioCategorias $repositorioDeCategorias; // Consultas SQL de categorías y prioridades
     private ServicioSla $servicioDeSla; // Cálculo del indicador de SLA
     private ServicioTecnicos $servicioDeTecnicos; // Reglas de técnicos (carga y tope)
+    private RepositorioTecnicos $repositorioDeTecnicos; // Consultas SQL de técnicos (bloqueo y conteo)
+    private RepositorioConsecutivos $repositorioDeConsecutivos; // Genera el número de ticket
 
     public function __construct() // Se ejecuta al crear el servicio con "new ServicioTickets()"
     {
@@ -190,5 +195,76 @@ final class ServicioTickets // "final": ninguna otra clase puede heredar de esta
     private function formatearFecha(string $fechaDeLaBaseDeDatos): string
     {
         return (new DateTimeImmutable($fechaDeLaBaseDeDatos))->format('c'); // Ej. 2026-10-16T09:30:00-05:00
+    }
+
+    // FASE 4 
+    /**
+     * Crea un ticket con todas las reglas de la prueba y devuelve su detalle.
+     * Recibe los datos ya limpios por ValidadorTickets.
+     */
+    public function crearTicket(array $datos): array
+    {
+        $usuario = $this->repositorioDeUsuarios->buscarUsuarioPorCodigo($datos['codigo_usuario']); // Busca al solicitante
+        if ($usuario === null) { // Si el código no existe
+            throw new ExcepcionApi('VALIDACION_FALLIDA', 'El usuario no existe', 422, ['codigo_usuario' => 'No existe un usuario con ese código']); // No se permite registrar
+        }
+        if ((int) $usuario['activo'] !== 1) { // Si el usuario está inactivo
+            throw new ExcepcionApi('VALIDACION_FALLIDA', 'El usuario está inactivo', 422, ['codigo_usuario' => 'El usuario está inactivo y no puede registrar tickets']); // No se permite registrar
+        }
+
+        if ($this->repositorioDeCategorias->buscarCategoriaPorId($datos['categoria_id']) === null) { // Si la categoría no existe
+            throw new ExcepcionApi('VALIDACION_FALLIDA', 'La categoría no existe', 422, ['categoria_id' => 'No existe una categoría con ese id']); // Responde 422
+        }
+
+        $prioridad = $this->repositorioDeCategorias->buscarPrioridadPorNombre($datos['prioridad']); // Busca la prioridad y sus horas de SLA
+        if ($prioridad === null) { // Si no existe en la tabla
+            throw new ExcepcionApi('VALIDACION_FALLIDA', 'La prioridad no existe', 422, ['prioridad' => 'No existe esa prioridad']); // Responde 422
+        }
+
+        $ahora = new DateTimeImmutable('now'); // Momento exacto de creación (se usa para la fecha, el límite y el historial)
+        $fechaLimite = $this->servicioDeSla->calcularFechaLimite($ahora, (int) $prioridad['horas_sla']); // Creación + horas del SLA
+        $ahoraParaLaBase = $ahora->format('Y-m-d H:i:s'); // Formato que entiende MySQL
+
+        $conexion = BaseDeDatos::obtenerConexion(); 
+        $conexion->beginTransaction(); // Empieza la transacción: o se guarda todo o no se guarda nada
+
+        try { // Si algo falla dentro, se deshace todo
+            $tecnico = $this->repositorioDeTecnicos->bloquearTecnicoPorId($datos['tecnico_id']); // Bloquea al técnico: nadie más puede asignarle tickets mientras decidimos
+            if ($tecnico === null || (int) $tecnico['activo'] !== 1) { // Si no existe o está inactivo
+                throw new ExcepcionApi('VALIDACION_FALLIDA', 'El técnico no está disponible', 422, ['tecnico_id' => 'El técnico no existe o está inactivo']); // Responde 422
+            }
+
+            $cargaActual = $this->repositorioDeTecnicos->contarTicketsActivosDelTecnico($datos['tecnico_id']); // Tickets ABIERTOS o EN CURSO que ya tiene
+            if (!$this->servicioDeTecnicos->tecnicoPuedeRecibirOtroTicket($cargaActual)) { // Si ya está en el tope
+                throw new ExcepcionApi('TOPE_CARGA', 'El técnico ' . $tecnico['nombre'] . ' ya tiene el máximo de tickets activos', 409); // Responde 409
+            }
+
+            $numeroDelTicket = $this->repositorioDeConsecutivos->generarSiguienteNumeroDeTicket((int) $ahora->format('Y')); // Número único, seguro ante concurrencia
+            $idDelTicket = $this->repositorioDeTickets->insertarTicket([ // Guarda el ticket
+                'numero'         => $numeroDelTicket, // TK-2026-000026
+                'usuario_id'     => (int) $usuario['id'], // Solicitante
+                'categoria_id'   => $datos['categoria_id'], // Categoría
+                'prioridad_id'   => (int) $prioridad['id'], // Prioridad
+                'tecnico_id'     => $datos['tecnico_id'], // Técnico asignado
+                'descripcion'    => $datos['descripcion'], // Descripción
+                'fecha_creacion' => $ahoraParaLaBase, // Momento de creación
+                'fecha_limite'   => $fechaLimite->format('Y-m-d H:i:s'), // Fecha límite del SLA
+            ]);
+
+            $this->repositorioDeHistorial->registrarCambioEnElHistorial( // Primera línea del historial
+                $idDelTicket, // Ticket recién creado
+                null, // No había estado anterior
+                'ABIERTO', // Estado inicial
+                'Ticket creado y asignado a ' . $tecnico['nombre'], // Observación
+                $ahoraParaLaBase // Fecha del registro
+            );
+
+            $conexion->commit(); // Todo salió bien: guarda definitivamente y libera los bloqueos
+        } catch (\Throwable $errorAlCrear) { // Cualquier fallo (regla de negocio o error de base de datos)
+            $conexion->rollBack(); // Deshace todo lo hecho dentro de la transacción (incluido el consecutivo)
+            throw $errorAlCrear; // Vuelve a lanzar el error para que el manejador global responda
+        }
+
+        return $this->obtenerDetalleDelTicket($numeroDelTicket); // Devuelve el ticket recién creado con el mismo formato del detalle
     }
 }

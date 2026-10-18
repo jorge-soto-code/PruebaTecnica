@@ -51,4 +51,13 @@ final class ServicioSla
         }
         return 'EN_TIEMPO'; 
     }
+
+    // FASE 4
+    /**
+     * Fecha límite = momento de creación + las horas de SLA de la prioridad (Alta 4, Media 24, Baja 72).
+     */
+    public function calcularFechaLimite(DateTimeImmutable $fechaDeCreacion, int $horasDeSla): DateTimeImmutable
+    {
+        return $fechaDeCreacion->modify('+' . $horasDeSla . ' hours'); // Suma las horas y devuelve una fecha nueva
+    }
 }

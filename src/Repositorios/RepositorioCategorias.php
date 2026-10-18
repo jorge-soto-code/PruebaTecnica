@@ -28,4 +28,31 @@ final class RepositorioCategorias
         );
         return $sentencia->fetchAll();
     }
+
+    // FASE 4
+    /**
+     * Busca una categoría por su id. Devuelve null si no existe.
+     */
+    public function buscarCategoriaPorId(int $idDeLaCategoria): ?array
+    {
+        $sentencia = BaseDeDatos::obtenerConexion()->prepare( 
+            'SELECT id, nombre FROM categorias WHERE id = :id' 
+        );
+        $sentencia->execute(['id' => $idDeLaCategoria]); 
+        $fila = $sentencia->fetch();
+        return $fila === false ? null : $fila; // Convierte "no hay fila" en null
+    }
+
+    /**
+     * Busca una prioridad por su nombre (Alta, Media o Baja). Devuelve null si no existe.
+     */
+    public function buscarPrioridadPorNombre(string $nombreDeLaPrioridad): ?array
+    {
+        $sentencia = BaseDeDatos::obtenerConexion()->prepare( 
+            'SELECT id, nombre, horas_sla FROM prioridades WHERE nombre = :nombre' 
+        );
+        $sentencia->execute(['nombre' => $nombreDeLaPrioridad]); 
+        $fila = $sentencia->fetch(); 
+        return $fila === false ? null : $fila; // Convierte "no hay fila" en null
+    }
 }

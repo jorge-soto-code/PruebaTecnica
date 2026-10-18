@@ -128,4 +128,30 @@ final class RepositorioTickets
         $condicionesSql = $condiciones === [] ? '' : 'WHERE ' . implode(' AND ', $condiciones); 
         return [$condicionesSql, $valores]; 
     }
+
+    // FASE 4 
+    /**
+     * Inserta un ticket nuevo y devuelve su id. Debe llamarse dentro de la transacción de creación.
+     * $datos trae: numero, usuario_id, categoria_id, prioridad_id, tecnico_id, descripcion, fecha_creacion, fecha_limite.
+     */
+    public function insertarTicket(array $datos): int
+    {
+        $conexion = BaseDeDatos::obtenerConexion(); 
+        $sentencia = $conexion->prepare( // Prepara el INSERT: los valores se envían aparte
+            'INSERT INTO tickets (numero, usuario_id, categoria_id, prioridad_id, tecnico_id, estado, descripcion, fecha_creacion, fecha_limite) ' . // Columnas a llenar
+            "VALUES (:numero, :usuario_id, :categoria_id, :prioridad_id, :tecnico_id, 'ABIERTO', :descripcion, :fecha_creacion, :fecha_limite)" // Todo ticket nace ABIERTO
+        );
+        $sentencia->execute([ // Ejecuta enviando los valores como datos
+            'numero'         => $datos['numero'], // TK-2026-000026
+            'usuario_id'     => $datos['usuario_id'], // Solicitante
+            'categoria_id'   => $datos['categoria_id'], // Categoría
+            'prioridad_id'   => $datos['prioridad_id'], // Prioridad
+            'tecnico_id'     => $datos['tecnico_id'], // Técnico asignado
+            'descripcion'    => $datos['descripcion'], // Descripción del problema
+            'fecha_creacion' => $datos['fecha_creacion'], // Momento de creación
+            'fecha_limite'   => $datos['fecha_limite'], // Fecha límite del SLA
+        ]);
+
+        return (int) $conexion->lastInsertId(); // Devuelve el id que MySQL le puso al ticket
+    }
 }

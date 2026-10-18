@@ -60,4 +60,15 @@ final class ControladorTickets // "final": ninguna otra clase puede heredar de e
     {
         Respuesta::enviarJson($this->servicioDeTickets->obtenerDetalleDelTicket($parametrosDeLaRuta['numero'])); // Responde 200 (o 404 si no existe)
     }
+
+    // FASE 4 
+    /**
+     * POST /api/tickets  ->  201 con el ticket creado, 422 si falla la validación, 409 si el técnico está al tope.
+     */
+    public function crearTicket(Peticion $peticion, array $parametrosDeLaRuta): void
+    {
+        $datos = $this->validadorDeTickets->validarDatosParaCrearTicket($peticion->obtenerCuerpoJson()); // Lee el JSON y lo valida (lanza 422 si está mal)
+        $ticketCreado = $this->servicioDeTickets->crearTicket($datos); // Aplica las reglas y guarda
+        Respuesta::enviarJson($ticketCreado, 201); // Responde 201 (creado) con el ticket
+    }
 }

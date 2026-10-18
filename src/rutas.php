@@ -29,7 +29,7 @@ return static function (Enrutador $enrutador): void { // Devuelve una función q
     $enrutador->registrarRutaGet('/tickets/{numero}',  [new ControladorTickets(), 'obtenerDetalleDelTicket']); // Detalle con historial (200 o 404)
 
     // ---- Fase 4: crear ----
-    // $enrutador->registrarRutaPost('/tickets',          [new ControladorTickets(), 'crearTicket']);
+    $enrutador->registrarRutaPost('/tickets',          [new ControladorTickets(), 'crearTicket']); // Crea un ticket (201, 409 o 422)
 
     // ---- Fase 5: cambios ----
     // $enrutador->registrarRutaPatch('/tickets/{numero}/estado',  [new ControladorTickets(), 'cambiarEstadoDelTicket']);
