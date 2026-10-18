@@ -1,0 +1,131 @@
+<?php
+declare(strict_types=1); 
+namespace Aplicacion\Repositorios; 
+
+use Aplicacion\Nucleo\BaseDeDatos; 
+use PDO; // Para el tipo PARAM_INT
+
+final class RepositorioTickets 
+{
+    private const CONSULTA_BASE_DE_TICKETS =
+        'SELECT k.id, k.numero, u.codigo AS codigo_usuario, u.nombre AS usuario, u.cargo, u.area, ' . // Datos del ticket y de quien lo pidió
+        'c.nombre AS categoria, p.nombre AS prioridad, t.nombre AS tecnico, k.estado, ' . // Nombres legibles de las tablas de apoyo
+        'k.descripcion, k.solucion, k.fecha_creacion, k.fecha_limite, k.fecha_cierre ' . // Descripción, solución y fechas
+        'FROM tickets k ' . // Tabla principal
+        'JOIN usuarios u ON u.id = k.usuario_id ' . // Une con el solicitante
+        'JOIN categorias c ON c.id = k.categoria_id ' . // Une con la categoría
+        'JOIN prioridades p ON p.id = k.prioridad_id ' . // Une con la prioridad
+        'JOIN tecnicos t ON t.id = k.tecnico_id '; // Une con el técnico asignado
+
+    /**
+     * Busca los tickets que cumplen los filtros, una página a la vez.
+     * Devuelve ['filas' => lista de tickets de la página, 'total' => cuántos hay en todas las páginas].
+     * Filtros posibles: estado, prioridad (nombre), tecnico (id) y texto (número o nombre del usuario).
+     */
+    public function buscarTicketsPaginados(array $filtros, int $pagina, int $registrosPorPagina): array
+    {
+        $conexion = BaseDeDatos::obtenerConexion(); 
+        [$condicionesSql, $valoresDeLasCondiciones] = $this->construirCondiciones($filtros); // Convierte los filtros en SQL con comodines y sus valores
+
+        $sentenciaDelTotal = $conexion->prepare( 
+            'SELECT COUNT(*) ' . 
+            'FROM tickets k ' . 
+            'JOIN usuarios u ON u.id = k.usuario_id ' . 
+            'JOIN prioridades p ON p.id = k.prioridad_id ' . 
+            $condicionesSql 
+        );
+        $sentenciaDelTotal->execute($valoresDeLasCondiciones); 
+        $totalDeTickets = (int) $sentenciaDelTotal->fetchColumn(); 
+
+        $sentenciaDeLaPagina = $conexion->prepare( 
+            self::CONSULTA_BASE_DE_TICKETS . 
+            $condicionesSql . ' ' . 
+            'ORDER BY k.fecha_creacion DESC, k.id DESC ' . 
+            'LIMIT :limite OFFSET :desplazamiento'
+        );
+
+        foreach ($valoresDeLasCondiciones as $nombreDelComodin => $valorDelComodin) { // Entrega cada filtro a la sentencia
+            $sentenciaDeLaPagina->bindValue($nombreDelComodin, $valorDelComodin); // Asocia el comodín con su valor
+        }
+        $sentenciaDeLaPagina->bindValue(':limite', $registrosPorPagina, PDO::PARAM_INT); // El límite debe viajar como número entero
+        $sentenciaDeLaPagina->bindValue(':desplazamiento', ($pagina - 1) * $registrosPorPagina, PDO::PARAM_INT); // Página 1 salta 0, página 2 salta 10...
+        $sentenciaDeLaPagina->execute(); // Ejecuta la consulta de la página
+        return ['filas' => $sentenciaDeLaPagina->fetchAll(), 'total' => $totalDeTickets]; // Entrega la página y el total
+    }
+
+    /**
+     * Busca un ticket por su número (ej. TK-2026-000018). Devuelve null si no existe.
+     */
+    public function buscarTicketPorNumero(string $numeroDelTicket): ?array
+    {
+        $conexion = BaseDeDatos::obtenerConexion(); 
+        $sentencia = $conexion->prepare( 
+            self::CONSULTA_BASE_DE_TICKETS . 
+            'WHERE k.numero = :numero' 
+        );
+        $sentencia->execute(['numero' => $numeroDelTicket]); 
+        $filaDelTicket = $sentencia->fetch(); 
+        return $filaDelTicket === false ? null : $filaDelTicket;
+    }
+    /**
+     * Cuenta los tickets de cada estado. Devuelve, por ejemplo, ['ABIERTO' => 6, 'EN CURSO' => 5].
+     */
+    public function contarTicketsPorEstado(): array
+    {
+        $conexion = BaseDeDatos::obtenerConexion(); 
+        $sentencia = $conexion->query( 
+            'SELECT estado, COUNT(*) AS cantidad FROM tickets GROUP BY estado' 
+        );
+        $cantidadesPorEstado = [];
+
+        foreach ($sentencia->fetchAll() as $fila) { 
+            $cantidadesPorEstado[$fila['estado']] = (int) $fila['cantidad']; 
+        }
+        return $cantidadesPorEstado; 
+    }
+    /**
+     * Cuenta los tickets NO cerrados cuya fecha límite ya pasó.
+     */
+    public function contarTicketsVencidos(string $momentoActual): int
+    {
+        $conexion = BaseDeDatos::obtenerConexion(); 
+        $sentencia = $conexion->prepare( 
+            "SELECT COUNT(*) FROM tickets WHERE estado <> 'CERRADO' AND fecha_limite < :ahora" 
+        );
+        $sentencia->execute(['ahora' => $momentoActual]); 
+        return (int) $sentencia->fetchColumn(); 
+    }
+    /**
+     * Convierte los filtros en un trozo de SQL (WHERE ...) y los valores de sus comodines.
+     * Solo agrega una condición si el filtro vino con valor.
+     */
+    private function construirCondiciones(array $filtros): array
+    {
+        $condiciones = []; 
+        $valores = []; 
+
+        if (!empty($filtros['estado'])) { 
+            $condiciones[] = 'k.estado = :estado'; 
+            $valores[':estado'] = $filtros['estado']; 
+        }
+
+        if (!empty($filtros['prioridad'])) { 
+            $condiciones[] = 'p.nombre = :prioridad'; 
+            $valores[':prioridad'] = $filtros['prioridad']; 
+        }
+
+        if (!empty($filtros['tecnico'])) {
+            $condiciones[] = 'k.tecnico_id = :tecnico'; 
+            $valores[':tecnico'] = (int) $filtros['tecnico']; 
+        }
+
+        if (!empty($filtros['texto'])) { 
+            $condiciones[] = '(k.numero LIKE :texto_numero OR u.nombre LIKE :texto_nombre)'; 
+            $textoSeguro = addcslashes($filtros['texto'], '\\%_'); // Escapar caracteres, para prevenir que rompan o alteren la consulta
+            $valores[':texto_numero'] = '%' . $textoSeguro . '%'; 
+            $valores[':texto_nombre'] = '%' . $textoSeguro . '%'; 
+        }
+        $condicionesSql = $condiciones === [] ? '' : 'WHERE ' . implode(' AND ', $condiciones); 
+        return [$condicionesSql, $valores]; 
+    }
+}

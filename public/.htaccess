@@ -1,0 +1,22 @@
+# =====================================================================
+# ARCHIVO: public/.htaccess
+#
+# QUÉ HACE:
+#   Le dice a Apache (el servidor de XAMPP) que cualquier dirección que
+#   empiece con /api/ (por ejemplo /api/tickets/TK-2026-000042) se atienda
+#   con api/index.php. Así las direcciones se ven limpias, sin ".php".
+#
+# REQUISITO:
+#   El módulo mod_rewrite de Apache debe estar activo (en XAMPP lo está).
+# =====================================================================
+
+RewriteEngine On
+# ^ Enciende el reescritor de direcciones de Apache
+
+RewriteRule ^api/index\.php$ - [L]
+# ^ Si ya se pidió api/index.php directamente, no reescribir nada (evita un ciclo infinito)
+
+RewriteRule ^api/(.*)$ api/index.php [L,QSA]
+# ^ Toda dirección que empiece con api/ se atiende con api/index.php
+#   [L]   = es la última regla que se aplica
+#   [QSA] = conserva los parámetros de la dirección (?estado=ABIERTO&page=2)
