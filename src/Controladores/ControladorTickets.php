@@ -71,4 +71,22 @@ final class ControladorTickets // "final": ninguna otra clase puede heredar de e
         $ticketCreado = $this->servicioDeTickets->crearTicket($datos); // Aplica las reglas y guarda
         Respuesta::enviarJson($ticketCreado, 201); // Responde 201 (creado) con el ticket
     }
+
+    // FASE 5
+    /**
+     * PATCH /api/tickets/{numero}/estado  ->  200, 404, 409 si la transición no es válida, 422.
+     */
+    public function cambiarEstadoDelTicket(Peticion $peticion, array $parametrosDeLaRuta): void
+    {
+        $datos = $this->validadorDeTickets->validarDatosParaCambiarEstado($peticion->obtenerCuerpoJson()); // Lee el JSON y lo valida (lanza 422 si está mal)
+        Respuesta::enviarJson($this->servicioDeTickets->cambiarEstadoDelTicket($parametrosDeLaRuta['numero'], $datos)); // Responde 200 con el ticket actualizado
+    }
+    /**
+     * PATCH /api/tickets/{numero}/tecnico  ->  200, 404, 409 si el técnico está al tope, 422.
+     */
+    public function reasignarTecnicoDelTicket(Peticion $peticion, array $parametrosDeLaRuta): void
+    {
+        $datos = $this->validadorDeTickets->validarDatosParaReasignarTecnico($peticion->obtenerCuerpoJson()); // Lee el JSON y lo valida (lanza 422 si está mal)
+        Respuesta::enviarJson($this->servicioDeTickets->reasignarTecnicoDelTicket($parametrosDeLaRuta['numero'], $datos)); // Responde 200 con el ticket actualizado
+    }
 }

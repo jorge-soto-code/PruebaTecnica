@@ -50,4 +50,18 @@ final class RepositorioTecnicos
         $sentencia->execute(['id' => $idDelTecnico]); 
         return (int) $sentencia->fetchColumn(); 
     }
+
+    // FASE 5 
+    /**
+     * Busca un técnico por su id, sin bloquear. Devuelve null si no existe.
+     */
+    public function buscarTecnicoPorId(int $idDelTecnico): ?array
+    {
+        $sentencia = BaseDeDatos::obtenerConexion()->prepare( 
+            'SELECT id, nombre, activo FROM tecnicos WHERE id = :id' 
+        );
+        $sentencia->execute(['id' => $idDelTecnico]); 
+        $fila = $sentencia->fetch(); 
+        return $fila === false ? null : $fila; 
+    }
 }

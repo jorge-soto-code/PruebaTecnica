@@ -32,6 +32,6 @@ return static function (Enrutador $enrutador): void { // Devuelve una función q
     $enrutador->registrarRutaPost('/tickets',          [new ControladorTickets(), 'crearTicket']); // Crea un ticket (201, 409 o 422)
 
     // ---- Fase 5: cambios ----
-    // $enrutador->registrarRutaPatch('/tickets/{numero}/estado',  [new ControladorTickets(), 'cambiarEstadoDelTicket']);
-    // $enrutador->registrarRutaPatch('/tickets/{numero}/tecnico', [new ControladorTickets(), 'reasignarTecnicoDelTicket']);
+    $enrutador->registrarRutaPatch('/tickets/{numero}/estado',  [new ControladorTickets(), 'cambiarEstadoDelTicket']); // Cambia el estado (200, 404, 409 o 422)
+    $enrutador->registrarRutaPatch('/tickets/{numero}/tecnico', [new ControladorTickets(), 'reasignarTecnicoDelTicket']); // Reasigna técnico (200, 404, 409 o 422)
 };

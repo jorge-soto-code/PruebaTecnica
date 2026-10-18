@@ -151,7 +151,47 @@ final class RepositorioTickets
             'fecha_creacion' => $datos['fecha_creacion'], // Momento de creación
             'fecha_limite'   => $datos['fecha_limite'], // Fecha límite del SLA
         ]);
-
         return (int) $conexion->lastInsertId(); // Devuelve el id que MySQL le puso al ticket
+    }
+
+    // FASE 5 
+    /**
+     * Bloquea la fila del ticket hasta que termine la transacción actual y la devuelve.
+     * Así, si dos personas cambian el mismo ticket al mismo tiempo, una espera a la otra.
+     * Debe llamarse DENTRO de una transacción. Devuelve null si el número no existe.
+     */
+    public function bloquearTicketPorNumero(string $numeroDelTicket): ?array
+    {
+        $sentencia = BaseDeDatos::obtenerConexion()->prepare( 
+            'SELECT id, numero, estado, tecnico_id FROM tickets WHERE numero = :numero FOR UPDATE' // FOR UPDATE bloquea la fila para los demás
+        );
+        $sentencia->execute(['numero' => $numeroDelTicket]); 
+        $fila = $sentencia->fetch(); 
+        return $fila === false ? null : $fila; 
+    }
+    /**
+     * Cambia el estado de un ticket. Al cerrar guarda la solución y la fecha de cierre; en otro caso van en null.
+     */
+    public function actualizarEstadoDelTicket(int $idDelTicket, string $estadoNuevo, ?string $solucion, ?string $fechaDeCierre): void
+    {
+        $sentencia = BaseDeDatos::obtenerConexion()->prepare( // Prepara el UPDATE: los valores se envían aparte
+            'UPDATE tickets SET estado = :estado, solucion = :solucion, fecha_cierre = :fecha_cierre WHERE id = :id' // El WHERE usa la llave primaria
+        );
+        $sentencia->execute([ // Ejecuta enviando los valores como datos
+            'estado'       => $estadoNuevo, 
+            'solucion'     => $solucion, 
+            'fecha_cierre' => $fechaDeCierre, 
+            'id'           => $idDelTicket, 
+        ]);
+    }
+    /**
+     * Cambia el técnico asignado a un ticket.
+     */
+    public function actualizarTecnicoDelTicket(int $idDelTicket, int $idDelTecnicoNuevo): void
+    {
+        $sentencia = BaseDeDatos::obtenerConexion()->prepare( 
+            'UPDATE tickets SET tecnico_id = :tecnico_id WHERE id = :id' // El WHERE usa la llave primaria
+        );
+        $sentencia->execute(['tecnico_id' => $idDelTecnicoNuevo, 'id' => $idDelTicket]); // Ejecuta enviando los valores como datos
     }
 }

@@ -46,6 +46,7 @@ final class ServicioTickets // "final": ninguna otra clase puede heredar de esta
     private ServicioTecnicos $servicioDeTecnicos; // Reglas de técnicos (carga y tope)
     private RepositorioTecnicos $repositorioDeTecnicos; // Consultas SQL de técnicos (bloqueo y conteo)
     private RepositorioConsecutivos $repositorioDeConsecutivos; // Genera el número de ticket
+    private ServicioFlujoDeEstados $servicioDeFlujoDeEstados; // Regla ABIERTO -> EN CURSO -> CERRADO
 
     public function __construct() // Se ejecuta al crear el servicio con "new ServicioTickets()"
     {
@@ -55,6 +56,9 @@ final class ServicioTickets // "final": ninguna otra clase puede heredar de esta
         $this->repositorioDeCategorias = new RepositorioCategorias(); // Crea el repositorio de categorías
         $this->servicioDeSla = new ServicioSla(); // Crea el servicio de SLA
         $this->servicioDeTecnicos = new ServicioTecnicos(); // Crea el servicio de técnicos
+        $this->repositorioDeTecnicos = new RepositorioTecnicos(); // Crea el repositorio de técnicos
+        $this->repositorioDeConsecutivos = new RepositorioConsecutivos(); // Crea el repositorio de consecutivos
+        $this->servicioDeFlujoDeEstados = new ServicioFlujoDeEstados(); // Crea la regla del flujo de estados
     }
 
     /**
@@ -163,6 +167,108 @@ final class ServicioTickets // "final": ninguna otra clase puede heredar de esta
         ];
     }
 
+    // FASE 5 
+    /**
+     * Cambia el estado de un ticket respetando el flujo ABIERTO -> EN CURSO -> CERRADO.
+     * Lanza 404 si no existe y 409 si el salto no es válido. Devuelve el detalle actualizado.
+     */
+    public function cambiarEstadoDelTicket(string $numeroDelTicket, array $datos): array
+    {
+        $ahoraParaLaBase = (new DateTimeImmutable('now'))->format('Y-m-d H:i:s'); // Momento del cambio (para el cierre y el historial)
+        $this->ejecutarEnTransaccion(function () use ($numeroDelTicket, $datos, $ahoraParaLaBase): void { // Todo lo de adentro se guarda junto o no se guarda nada
+            $ticket = $this->repositorioDeTickets->bloquearTicketPorNumero($numeroDelTicket); // Bloquea el ticket: nadie más lo cambia mientras decidimos
+            if ($ticket === null) { // Si el número no existe
+                throw new ExcepcionApi('NO_ENCONTRADO', 'El ticket ' . $numeroDelTicket . ' no existe', 404); // Responde 404
+            }
+
+            $estadoActual = $ticket['estado']; // Estado en el que está ahora
+            $estadoNuevo = $datos['estado']; // Estado que se pide
+
+            if (!$this->servicioDeFlujoDeEstados->transicionEsValida($estadoActual, $estadoNuevo)) { // Si no es el siguiente paso exacto
+                throw new ExcepcionApi('TRANSICION_INVALIDA', $this->servicioDeFlujoDeEstados->obtenerMensajeDeTransicionInvalida($estadoActual, $estadoNuevo), 409); // Responde 409
+            }
+
+            $seCierra = $estadoNuevo === 'CERRADO'; // Solo al cerrar se guardan solución y fecha de cierre
+            $this->repositorioDeTickets->actualizarEstadoDelTicket( // Guarda el nuevo estado
+                (int) $ticket['id'], // Ticket a modificar
+                $estadoNuevo, // Estado nuevo
+                $seCierra ? $datos['solucion'] : null, // Solución (solo al cerrar)
+                $seCierra ? $ahoraParaLaBase : null // Fecha de cierre (solo al cerrar)
+            );
+
+            $observacion = $datos['observacion'] ?? 'Cambio de estado de ' . $estadoActual . ' a ' . $estadoNuevo; // Usa la nota enviada o una automática
+            $this->repositorioDeHistorial->registrarCambioEnElHistorial((int) $ticket['id'], $estadoActual, $estadoNuevo, $observacion, $ahoraParaLaBase); // Deja el cambio en el historial
+        });
+
+        return $this->obtenerDetalleDelTicket($numeroDelTicket); // Devuelve el ticket ya actualizado
+    }
+    /**
+     * Reasigna el ticket a otro técnico. Lanza 404 si no existe, 409 si el ticket está cerrado,
+     * ya es de ese técnico o el técnico está al tope, y 422 si el técnico no existe o está inactivo.
+     */
+    public function reasignarTecnicoDelTicket(string $numeroDelTicket, array $datos): array
+    {
+        $ahoraParaLaBase = (new DateTimeImmutable('now'))->format('Y-m-d H:i:s'); // Momento del cambio (para el historial)
+
+        $this->ejecutarEnTransaccion(function () use ($numeroDelTicket, $datos, $ahoraParaLaBase): void { // Todo lo de adentro se guarda junto o no se guarda nada
+            $ticket = $this->repositorioDeTickets->bloquearTicketPorNumero($numeroDelTicket); // Bloquea el ticket
+            if ($ticket === null) { // Si el número no existe
+                throw new ExcepcionApi('NO_ENCONTRADO', 'El ticket ' . $numeroDelTicket . ' no existe', 404); // Responde 404
+            }
+
+            if ($ticket['estado'] === 'CERRADO') { // Un ticket cerrado ya no se reasigna
+                throw new ExcepcionApi('TICKET_CERRADO', 'No se puede reasignar un ticket CERRADO', 409); // Responde 409
+            }
+
+            $idDelTecnicoNuevo = $datos['tecnico_id']; // Técnico al que se quiere pasar
+            if ($idDelTecnicoNuevo === (int) $ticket['tecnico_id']) { // Si ya es de ese técnico
+                throw new ExcepcionApi('MISMO_TECNICO', 'El ticket ya está asignado a ese técnico', 409); // Responde 409
+            }
+
+            $tecnicoNuevo = $this->repositorioDeTecnicos->bloquearTecnicoPorId($idDelTecnicoNuevo); // Bloquea al técnico nuevo: evita que dos personas le den el 5.º ticket a la vez
+            if ($tecnicoNuevo === null || (int) $tecnicoNuevo['activo'] !== 1) { // Si no existe o está inactivo
+                throw new ExcepcionApi('VALIDACION_FALLIDA', 'El técnico no está disponible', 422, ['tecnico_id' => 'El técnico no existe o está inactivo']); // Responde 422
+            }
+
+            $cargaActual = $this->repositorioDeTecnicos->contarTicketsActivosDelTecnico($idDelTecnicoNuevo); // Tickets ABIERTOS o EN CURSO que ya tiene
+            if (!$this->servicioDeTecnicos->tecnicoPuedeRecibirOtroTicket($cargaActual)) { // Si ya está en el tope
+                throw new ExcepcionApi('TOPE_CARGA', 'El técnico ' . $tecnicoNuevo['nombre'] . ' ya tiene el máximo de tickets activos', 409); // Responde 409
+            }
+
+            $tecnicoAnterior = $this->repositorioDeTecnicos->buscarTecnicoPorId((int) $ticket['tecnico_id']); // Técnico actual (solo para escribir su nombre en el historial)
+            $nombreAnterior = $tecnicoAnterior['nombre'] ?? 'sin técnico'; // Nombre del técnico anterior
+
+            $this->repositorioDeTickets->actualizarTecnicoDelTicket((int) $ticket['id'], $idDelTecnicoNuevo); // Guarda el técnico nuevo
+
+            $observacion = 'Reasignado de ' . $nombreAnterior . ' a ' . $tecnicoNuevo['nombre']; // Nota automática del cambio
+            if ($datos['observacion'] !== null) { // Si la persona escribió un motivo
+                $observacion .= '. ' . $datos['observacion']; // Lo agrega al final
+            }
+
+            $this->repositorioDeHistorial->registrarCambioEnElHistorial((int) $ticket['id'], $ticket['estado'], $ticket['estado'], $observacion, $ahoraParaLaBase); // El estado no cambia: anterior y nuevo son iguales
+        });
+
+        return $this->obtenerDetalleDelTicket($numeroDelTicket); // Devuelve el ticket ya actualizado
+    }
+    /**
+     * Ejecuta una función dentro de una transacción: si todo sale bien confirma, y si algo falla deshace todo.
+     * Devuelve lo que devuelva la función.
+     */
+    private function ejecutarEnTransaccion(callable $trabajo): mixed
+    {
+        $conexion = BaseDeDatos::obtenerConexion(); // Conexión compartida: la transacción vive en ella
+        $conexion->beginTransaction(); // Empieza la transacción: o se guarda todo o no se guarda nada
+
+        try { 
+            $resultado = $trabajo(); // Hace el trabajo pedido
+            $conexion->commit(); // Todo salió bien: guarda definitivamente y libera los bloqueos
+            return $resultado; // Entrega lo que devolvió el trabajo
+        } catch (\Throwable $error) { // Cualquier fallo (regla de negocio o error de base de datos)
+            $conexion->rollBack(); // Deshace todo lo hecho dentro de la transacción
+            throw $error; // Vuelve a lanzar el error para que el manejador global responda
+        }
+    }
+    // FASE 3
     /**
      * Convierte una fila de la base de datos al formato de la API (el que pide la prueba).
      */
@@ -188,7 +294,6 @@ final class ServicioTickets // "final": ninguna otra clase puede heredar de esta
             ),
         ];
     }
-
     /**
      * Convierte una fecha de la BD ("2026-10-16 09:30:00") a ISO 8601 con zona horaria.
      */
