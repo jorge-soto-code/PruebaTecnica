@@ -1,0 +1,48 @@
+/*
+  ARCHIVO: public/recursos/css/estilos.css
+  FASE: 6
+
+  QUÉ VA AQUÍ:
+    Estilos propios que Bootstrap no cubre:
+      - Que las filas de la tabla se vean "clicables" (cursor: pointer).
+      - Ajustes de las tarjetas del tablero.
+      - Zona de avisos emergentes.
+      - Texto con saltos de línea (descripción y solución).
+    Los colores de los indicadores SLA y de los estados los pone Bootstrap
+    (badges de colores): VENCIDO rojo, POR VENCER amarillo, EN TIEMPO verde.
+*/
+
+.fila-clicable {
+    /* Filas de la tabla de tickets */
+    cursor: pointer; /* La flecha se vuelve manito: indica que se puede hacer clic */
+}
+
+.fila-clicable:focus {
+    /* Cuando se llega a la fila con el teclado */
+    outline: 2px solid #0d6efd; /* Borde azul visible para saber dónde está el cursor */
+    outline-offset: -2px; /* El borde queda dentro de la fila */
+}
+
+.tarjeta-numero {
+    /* Tarjetas con números del tablero */
+    border: 0; /* Sin borde: se ven más limpias */
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08); /* Sombra suave */
+}
+
+.zona-de-avisos {
+    /* Contenedor de los mensajes emergentes */
+    position: fixed; /* Se queda fija aunque se haga scroll */
+    top: 1rem; /* Separada del borde de arriba */
+    right: 1rem; /* Pegada a la derecha */
+    z-index: 2000; /* Por encima de las ventanas emergentes de Bootstrap */
+    max-width: min(
+        420px,
+        calc(100vw - 2rem)
+    ); /* Nunca más ancha que la pantalla */
+}
+
+.texto-con-saltos {
+    /* Descripción y solución */
+    white-space: pre-wrap; /* Respeta los saltos de línea que escribió la persona */
+    overflow-wrap: anywhere; /* Parte palabras muy largas para que no se salgan */
+}

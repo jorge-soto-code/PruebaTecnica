@@ -1,3 +1,8 @@
+# =====================================================================
+# .gitignore
+# Lista de archivos que Git debe IGNORAR (no subirlos al repositorio).
+# =====================================================================
+
 # Archivo con las claves REALES (contraseña de la BD y API key).
 # Nunca se sube. Lo que sí se sube es config.example.php (la plantilla).
 config.php
@@ -10,3 +15,10 @@ vendor/
 *.log
 .DS_Store
 Thumbs.db
+
+# Carpetas de editores
+.idea/
+.vscode/
+
+# Configuración de la página con la clave de la API (la plantilla configuracion.example.js sí se sube)
+public/recursos/js/configuracion.js

@@ -1,0 +1,178 @@
+{
+  "info": {
+    "name": "Soporte Tickets API",
+    "description": "Colección de pruebas para la API REST del sistema de tickets. Ejecutar sobre una base de datos cargada con esquema.sql y datos_prueba.sql.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      { "key": "value", "value": "{{apiKey}}", "type": "string" },
+      { "key": "key", "value": "X-API-Key", "type": "string" },
+      { "key": "in", "value": "header", "type": "string" }
+    ]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080/PruebaTecnica/public/api" },
+    { "key": "apiKey", "value": "cambia-esta-clave-por-una-larga-y-secreta" },
+    { "key": "ticketAbierto", "value": "TK-2026-000025" },
+    { "key": "ticketReasignable", "value": "TK-2026-000021" },
+    { "key": "ticketCerrado", "value": "TK-2026-000001" },
+    { "key": "ticketInexistente", "value": "TK-2026-999999" }
+  ],
+  "item": [
+    {
+      "name": "00 - Seguridad y rutas",
+      "item": [
+        {
+          "name": "Sin API key - 401",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/tickets", "host": ["{{baseUrl}}"], "path": ["tickets"] }
+          }
+        },
+        {
+          "name": "Ruta inexistente - 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/ruta-inexistente", "host": ["{{baseUrl}}"], "path": ["ruta-inexistente"] }
+          }
+        },
+        {
+          "name": "Método no permitido - 405",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/tickets", "host": ["{{baseUrl}}"], "path": ["tickets"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "01 - Consultas",
+      "item": [
+        { "name": "Usuario existente", "request": { "method": "GET", "url": "{{baseUrl}}/usuarios/USR001" } },
+        { "name": "Usuario inexistente - 404", "request": { "method": "GET", "url": "{{baseUrl}}/usuarios/USR999" } },
+        { "name": "Técnicos activos y carga", "request": { "method": "GET", "url": "{{baseUrl}}/tecnicos" } },
+        { "name": "Categorías y prioridades", "request": { "method": "GET", "url": "{{baseUrl}}/categorias" } },
+        { "name": "Resumen del tablero", "request": { "method": "GET", "url": "{{baseUrl}}/resumen" } },
+        { "name": "Tickets paginados", "request": { "method": "GET", "url": "{{baseUrl}}/tickets?page=1&per_page=10" } },
+        { "name": "Tickets filtrados", "request": { "method": "GET", "url": "{{baseUrl}}/tickets?estado=CERRADO&prioridad=Alta&q=000018" } },
+        { "name": "Filtro inválido - 422", "request": { "method": "GET", "url": "{{baseUrl}}/tickets?estado=XX" } },
+        { "name": "Detalle con historial", "request": { "method": "GET", "url": "{{baseUrl}}/tickets/{{ticketAbierto}}" } },
+        { "name": "Ticket inexistente - 404", "request": { "method": "GET", "url": "{{baseUrl}}/tickets/{{ticketInexistente}}" } }
+      ]
+    },
+    {
+      "name": "02 - Crear ticket",
+      "item": [
+        {
+          "name": "Crear ticket - 201",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"codigo_usuario\": \"USR001\",\n  \"categoria_id\": 3,\n  \"descripcion\": \"La impresora del segundo piso no imprime nada\",\n  \"prioridad\": \"Alta\",\n  \"tecnico_id\": 3\n}" },
+            "url": "{{baseUrl}}/tickets"
+          }
+        },
+        {
+          "name": "Campos obligatorios ausentes - 422",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}" },
+            "url": "{{baseUrl}}/tickets"
+          }
+        },
+        {
+          "name": "Usuario inactivo - 422",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"codigo_usuario\": \"USR010\",\n  \"categoria_id\": 3,\n  \"descripcion\": \"Solicitud de soporte con usuario inactivo\",\n  \"prioridad\": \"Media\",\n  \"tecnico_id\": 3\n}" },
+            "url": "{{baseUrl}}/tickets"
+          }
+        },
+        {
+          "name": "Descripción corta - 422",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"codigo_usuario\": \"USR001\",\n  \"categoria_id\": 3,\n  \"descripcion\": \"corta\",\n  \"prioridad\": \"Alta\",\n  \"tecnico_id\": 3\n}" },
+            "url": "{{baseUrl}}/tickets"
+          }
+        },
+        {
+          "name": "Técnico al tope - 409",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"codigo_usuario\": \"USR001\",\n  \"categoria_id\": 3,\n  \"descripcion\": \"Intento de asignación a técnico con carga máxima\",\n  \"prioridad\": \"Alta\",\n  \"tecnico_id\": 2\n}" },
+            "url": "{{baseUrl}}/tickets"
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 - Flujo de estado",
+      "item": [
+        {
+          "name": "Salto ABIERTO a CERRADO - 409",
+          "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"estado\": \"CERRADO\",\n  \"solucion\": \"Listo\"\n}" }, "url": "{{baseUrl}}/tickets/{{ticketAbierto}}/estado" }
+        },
+        {
+          "name": "ABIERTO a EN CURSO - 200",
+          "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"estado\": \"EN CURSO\",\n  \"observacion\": \"Empiezo a revisar\"\n}" }, "url": "{{baseUrl}}/tickets/{{ticketAbierto}}/estado" }
+        },
+        {
+          "name": "Cierre sin solución - 422",
+          "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"estado\": \"CERRADO\"\n}" }, "url": "{{baseUrl}}/tickets/{{ticketAbierto}}/estado" }
+        },
+        {
+          "name": "EN CURSO a CERRADO - 200",
+          "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"estado\": \"CERRADO\",\n  \"solucion\": \"Se reemplazó el cable de red\"\n}" }, "url": "{{baseUrl}}/tickets/{{ticketAbierto}}/estado" }
+        },
+        {
+          "name": "Reabrir cerrado - 409",
+          "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"estado\": \"EN CURSO\"\n}" }, "url": "{{baseUrl}}/tickets/{{ticketAbierto}}/estado" }
+        },
+        {
+          "name": "Ticket inexistente - 404",
+          "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"estado\": \"EN CURSO\"\n}" }, "url": "{{baseUrl}}/tickets/{{ticketInexistente}}/estado" }
+        }
+      ]
+    },
+    {
+      "name": "04 - Reasignación",
+      "item": [
+        {
+          "name": "Técnico al tope - 409",
+          "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"tecnico_id\": 2\n}" }, "url": "{{baseUrl}}/tickets/{{ticketReasignable}}/tecnico" }
+        },
+        {
+          "name": "Técnico inactivo - 422",
+          "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"tecnico_id\": 4\n}" }, "url": "{{baseUrl}}/tickets/{{ticketReasignable}}/tecnico" }
+        },
+        {
+          "name": "Mismo técnico - 409",
+          "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"tecnico_id\": 3\n}" }, "url": "{{baseUrl}}/tickets/{{ticketReasignable}}/tecnico" }
+        },
+        {
+          "name": "Reasignar correctamente - 200",
+          "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"tecnico_id\": 1,\n  \"observacion\": \"Balanceo de carga\"\n}" }, "url": "{{baseUrl}}/tickets/{{ticketReasignable}}/tecnico" }
+        },
+        {
+          "name": "Ticket cerrado - 409",
+          "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"tecnico_id\": 3\n}" }, "url": "{{baseUrl}}/tickets/{{ticketCerrado}}/tecnico" }
+        },
+        {
+          "name": "Sin técnico - 422",
+          "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{}" }, "url": "{{baseUrl}}/tickets/{{ticketReasignable}}/tecnico" }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,227 @@
+<!DOCTYPE html> <!-- Indica al navegador que este documento usa HTML5 -->
+<!--
+  ARCHIVO: public/index.html
+  CAPA: Interfaz (la ÚNICA página de la SPA)
+  FASE: 6
+  (Se llama index.html porque es el nombre que el servidor web abre por
+   defecto al entrar a una carpeta; por eso no se traduce.)
+
+  QUÉ VA AQUÍ:
+    Solo la estructura (HTML) de la pantalla. NO lleva SQL ni datos fijos:
+    todo lo que se ve (tickets, categorías, técnicos) lo pinta JavaScript con
+    la información que pide a la API.
+
+    La pantalla tiene estas zonas (cada una tiene un id para que JavaScript
+    la encuentre):
+      1. #tablero       -> tarjetas resumen: tickets por estado, vencidos y
+                           carga por técnico.
+      2. #filtros       -> estado, prioridad, técnico y texto libre.
+      3. #tabla         -> tabla de tickets + indicador SLA.
+      4. #paginacion    -> botones anterior / siguiente (10 por página).
+      5. #modal-nuevo   -> formulario para registrar un ticket.
+      6. #modal-detalle -> detalle del ticket + historial + botones para
+                           cambiar estado y reasignar.
+
+    Estilos: Bootstrap 5 (permitido por la prueba), cargado desde internet (CDN).
+    Scripts: JavaScript puro con fetch (sin React/Vue/Angular).
+-->
+<html lang="es"> <!-- Abre el documento y declara que el idioma es español -->
+
+<head> <!-- Información sobre la página que no se ve en pantalla -->
+    <meta charset="UTF-8"> <!-- Permite mostrar tildes y ñ correctamente -->
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- Hace que la página se adapte al ancho del celular -->
+    <title>Soporte TI – Tickets</title> <!-- Texto que aparece en la pestaña del navegador -->
+    <link rel="icon" href="data:,">
+    <!-- Icono vacío: evita que el navegador pida favicon.ico y llene la consola de errores 404 -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+    <!-- Estilos de Bootstrap 5 -->
+    <link rel="stylesheet" href="recursos/css/estilos.css"> <!-- Carga los estilos propios de la página -->
+</head> <!-- Cierra la información de la página -->
+
+<body class="bg-body-tertiary"> <!-- Todo lo que se ve en pantalla va aquí dentro (fondo gris claro) -->
+
+    <nav class="navbar navbar-dark bg-dark mb-4"> <!-- Barra superior -->
+        <div class="container"> <!-- Centra el contenido -->
+            <span class="navbar-brand mb-0 h1">Soporte TI – Gestión de tickets</span> <!-- Título principal -->
+            <button id="boton-nuevo" type="button" class="btn btn-primary">
+                <!-- Botón que abre el formulario de registro -->
+                + Nuevo ticket <!-- Texto del botón -->
+            </button> <!-- Cierra el botón -->
+        </div> <!-- Cierra el centrado -->
+    </nav> <!-- Cierra la barra superior -->
+
+    <main class="container pb-5"> <!-- Contenido principal de la página -->
+        <section id="tablero" aria-label="Resumen de tickets"></section>
+        <!-- Aquí JavaScript dibujará las tarjetas resumen -->
+
+        <section id="filtros" class="card mb-3" aria-label="Filtros"> <!-- Tarjeta con los filtros -->
+            <form id="formulario-filtros" class="card-body row g-2 align-items-end">
+                <!-- Formulario de filtros (no envía nada al servidor) -->
+                <div class="col-6 col-md-2"> <!-- Columna del filtro de estado -->
+                    <label for="filtro-estado" class="form-label small mb-1">Estado</label> <!-- Etiqueta -->
+                    <select id="filtro-estado" class="form-select form-select-sm"> <!-- Lista de estados -->
+                        <option value="">Todos</option> <!-- Sin filtrar -->
+                        <option value="ABIERTO">ABIERTO</option> <!-- Solo abiertos -->
+                        <option value="EN CURSO">EN CURSO</option> <!-- Solo en curso -->
+                        <option value="CERRADO">CERRADO</option> <!-- Solo cerrados -->
+                    </select> <!-- Cierra la lista -->
+                </div> <!-- Cierra la columna -->
+                <div class="col-6 col-md-2"> <!-- Columna del filtro de prioridad -->
+                    <label for="filtro-prioridad" class="form-label small mb-1">Prioridad</label> <!-- Etiqueta -->
+                    <select id="filtro-prioridad" class="form-select form-select-sm"></select>
+                    <!-- JavaScript llena las prioridades que vienen de la API -->
+                </div> <!-- Cierra la columna -->
+                <div class="col-6 col-md-3"> <!-- Columna del filtro de técnico -->
+                    <label for="filtro-tecnico" class="form-label small mb-1">Técnico</label> <!-- Etiqueta -->
+                    <select id="filtro-tecnico" class="form-select form-select-sm"></select>
+                    <!-- JavaScript llena los técnicos que vienen de la API -->
+                </div> <!-- Cierra la columna -->
+                <div class="col-12 col-md-4"> <!-- Columna del texto libre -->
+                    <label for="filtro-texto" class="form-label small mb-1">Buscar (número de ticket o nombre de
+                        usuario)</label> <!-- Etiqueta -->
+                    <input id="filtro-texto" type="search" class="form-control form-control-sm"
+                        placeholder="Ej. TK-2026-000018 o Carlos" autocomplete="off"> <!-- Campo de texto libre -->
+                </div> <!-- Cierra la columna -->
+                <div class="col-6 col-md-1"> <!-- Columna del botón limpiar -->
+                    <button id="boton-limpiar-filtros" type="button"
+                        class="btn btn-outline-secondary btn-sm w-100">Limpiar</button> <!-- Deja los filtros vacíos -->
+                </div> <!-- Cierra la columna -->
+            </form> <!-- Cierra el formulario de filtros -->
+        </section> <!-- Cierra la tarjeta de filtros -->
+
+        <section id="tabla" class="card mb-3" aria-label="Lista de tickets"> <!-- Tarjeta con la tabla -->
+            <div class="table-responsive"> <!-- Permite deslizar la tabla en pantallas pequeñas -->
+                <table class="table table-hover align-middle mb-0"> <!-- Tabla de Bootstrap -->
+                    <thead class="table-light"> <!-- Fila de títulos -->
+                        <tr> <!-- Abre la fila de títulos -->
+                            <th>Número</th> <!-- Columna 1 -->
+                            <th>Usuario</th> <!-- Columna 2 -->
+                            <th>Categoría</th> <!-- Columna 3 -->
+                            <th>Prioridad</th> <!-- Columna 4 -->
+                            <th>Técnico</th> <!-- Columna 5 -->
+                            <th>Estado</th> <!-- Columna 6 -->
+                            <th>Creado</th> <!-- Columna 7 -->
+                            <th>SLA</th> <!-- Columna 8 -->
+                        </tr> <!-- Cierra la fila de títulos -->
+                    </thead> <!-- Cierra los títulos -->
+                    <tbody id="cuerpo-tabla"> <!-- Aquí JavaScript dibujará las filas -->
+                        <tr>
+                            <td colspan="8" class="text-center text-muted py-4">Cargando tickets…</td>
+                        </tr> <!-- Mensaje mientras llegan los datos -->
+                    </tbody> <!-- Cierra el cuerpo de la tabla -->
+                </table> <!-- Cierra la tabla -->
+            </div> <!-- Cierra el contenedor deslizable -->
+        </section> <!-- Cierra la tarjeta de la tabla -->
+
+        <nav id="paginacion" aria-label="Paginación"></nav> <!-- Aquí JavaScript dibujará los botones de página -->
+    </main> <!-- Cierra el contenido principal -->
+
+    <div id="modal-nuevo" class="modal fade" tabindex="-1" aria-labelledby="titulo-nuevo" aria-hidden="true">
+        <!-- Ventana emergente para registrar un ticket -->
+        <div class="modal-dialog modal-lg modal-dialog-scrollable"> <!-- Tamaño y desplazamiento de la ventana -->
+            <form id="formulario-ticket" class="modal-content" novalidate>
+                <!-- Formulario (novalidate: la validación la hace el servidor y se muestra en cada campo) -->
+                <div class="modal-header"> <!-- Parte superior de la ventana -->
+                    <h2 id="titulo-nuevo" class="modal-title h5">Registrar ticket</h2> <!-- Título de la ventana -->
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                    <!-- Botón X para cerrar -->
+                </div> <!-- Cierra la parte superior -->
+                <div class="modal-body"> <!-- Cuerpo de la ventana -->
+                    <div id="error-general-nuevo" class="alert alert-danger d-none" role="alert"></div>
+                    <!-- Errores que no son de un campo concreto -->
+
+                    <div class="mb-3"> <!-- Grupo: código del usuario -->
+                        <label for="codigo-usuario" class="form-label">Código del usuario solicitante</label>
+                        <!-- Etiqueta -->
+                        <input id="codigo-usuario" name="codigo_usuario" type="text" class="form-control"
+                            placeholder="Ej. USR001" autocomplete="off"> <!-- Campo del código -->
+                        <div class="invalid-feedback" data-error-de="codigo_usuario"></div>
+                        <!-- Aquí se escribe el error de este campo -->
+                        <div id="datos-usuario" class="mt-2"></div>
+                        <!-- Aquí se muestran nombre, cargo y área del usuario -->
+                    </div> <!-- Cierra el grupo -->
+
+                    <div class="row g-3 mb-3"> <!-- Fila con categoría y prioridad -->
+                        <div class="col-md-6"> <!-- Columna de la categoría -->
+                            <label for="categoria-ticket" class="form-label">Categoría</label> <!-- Etiqueta -->
+                            <select id="categoria-ticket" name="categoria_id" class="form-select"></select>
+                            <!-- JavaScript llena las categorías que vienen de la base de datos -->
+                            <div class="invalid-feedback" data-error-de="categoria_id"></div>
+                            <!-- Error de este campo -->
+                        </div> <!-- Cierra la columna -->
+                        <div class="col-md-6"> <!-- Columna de la prioridad -->
+                            <label for="prioridad-ticket" class="form-label">Prioridad</label> <!-- Etiqueta -->
+                            <select id="prioridad-ticket" name="prioridad" class="form-select"></select>
+                            <!-- JavaScript llena las prioridades -->
+                            <div class="invalid-feedback" data-error-de="prioridad"></div> <!-- Error de este campo -->
+                        </div> <!-- Cierra la columna -->
+                    </div> <!-- Cierra la fila -->
+
+                    <div class="mb-3"> <!-- Grupo: técnico -->
+                        <label for="tecnico-ticket" class="form-label">Técnico asignado</label> <!-- Etiqueta -->
+                        <select id="tecnico-ticket" name="tecnico_id" class="form-select"></select>
+                        <!-- JavaScript llena los técnicos con su carga y sugiere el de menor carga -->
+                        <div class="invalid-feedback" data-error-de="tecnico_id"></div> <!-- Error de este campo -->
+                    </div> <!-- Cierra el grupo -->
+
+                    <div class="mb-1"> <!-- Grupo: descripción -->
+                        <label for="descripcion-ticket" class="form-label">Descripción</label> <!-- Etiqueta -->
+                        <textarea id="descripcion-ticket" name="descripcion" class="form-control" rows="4"
+                            maxlength="1100"></textarea> <!-- Área de texto (el servidor valida de 20 a 1.000) -->
+                        <div class="invalid-feedback" data-error-de="descripcion"></div> <!-- Error de este campo -->
+                        <div id="contador-descripcion" class="form-text">0 / 1000 (mínimo 20)</div>
+                        <!-- Contador de caracteres -->
+                    </div> <!-- Cierra el grupo -->
+                </div> <!-- Cierra el cuerpo de la ventana -->
+                <div class="modal-footer"> <!-- Parte inferior de la ventana -->
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <!-- Cierra sin guardar -->
+                    <button id="boton-registrar" type="submit" class="btn btn-primary" disabled>Registrar</button>
+                    <!-- Envía el formulario (apagado hasta tener un usuario válido) -->
+                </div> <!-- Cierra la parte inferior -->
+            </form> <!-- Cierra el formulario -->
+        </div> <!-- Cierra el tamaño de la ventana -->
+    </div> <!-- Cierra la ventana de registro -->
+
+    <div id="modal-detalle" class="modal fade" tabindex="-1" aria-labelledby="titulo-detalle" aria-hidden="true">
+        <!-- Ventana emergente con el detalle del ticket -->
+        <div class="modal-dialog modal-xl modal-dialog-scrollable"> <!-- Tamaño y desplazamiento de la ventana -->
+            <div class="modal-content"> <!-- Contenido de la ventana -->
+                <div class="modal-header"> <!-- Parte superior de la ventana -->
+                    <h2 id="titulo-detalle" class="modal-title h5">Detalle del ticket</h2>
+                    <!-- Título (JavaScript pone el número) -->
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                    <!-- Botón X para cerrar -->
+                </div> <!-- Cierra la parte superior -->
+                <div class="modal-body"> <!-- Cuerpo de la ventana -->
+                    <div id="error-detalle" class="alert alert-danger d-none" role="alert"></div>
+                    <!-- Errores de cambio de estado o reasignación (409, 422) -->
+                    <div id="contenido-detalle"></div>
+                    <!-- Aquí JavaScript dibuja los datos, el historial y las acciones -->
+                </div> <!-- Cierra el cuerpo de la ventana -->
+                <div class="modal-footer"> <!-- Parte inferior de la ventana -->
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cerrar</button>
+                    <!-- Cierra la ventana -->
+                </div> <!-- Cierra la parte inferior -->
+            </div> <!-- Cierra el contenido -->
+        </div> <!-- Cierra el tamaño de la ventana -->
+    </div> <!-- Cierra la ventana de detalle -->
+
+    <div id="avisos" class="zona-de-avisos" aria-live="polite"></div> <!-- Mensajes emergentes (éxito o error) -->
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- JavaScript de Bootstrap (para las ventanas emergentes) -->
+    <!-- Orden de carga: primero lo básico, al final el que arranca todo (principal.js) -->
+    <script src="recursos/js/configuracion.js"></script>
+    <!-- Dirección de la API y clave (copia de configuracion.example.js) -->
+    <script src="recursos/js/utilidades.js"></script> <!-- Funciones pequeñas compartidas -->
+    <script src="recursos/js/clienteApi.js"></script> <!-- Funciones que hablan con la API -->
+    <script src="recursos/js/tablero.js"></script> <!-- Dibuja el tablero resumen -->
+    <script src="recursos/js/tabla.js"></script> <!-- Dibuja la tabla, filtros y paginación -->
+    <script src="recursos/js/formulario.js"></script> <!-- Formulario para registrar un ticket -->
+    <script src="recursos/js/detalle.js"></script> <!-- Ventana de detalle e historial -->
+    <script src="recursos/js/principal.js"></script> <!-- Arranca todo al cargar la página -->
+</body> <!-- Cierra lo que se ve en pantalla -->
+
+</html> <!-- Cierra el documento -->
