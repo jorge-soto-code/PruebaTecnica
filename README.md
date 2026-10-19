@@ -48,10 +48,10 @@ Todas las peticiones requieren el encabezado:
 X-API-Key: la-misma-clave-de-config.php
 ```
 
-Base URL:
+Base de la API para Postman (no es la pantalla de la aplicación):
 
 ```text
-http://localhost:8080/PruebaTecnica/public
+http://localhost:8080/PruebaTecnica/public/api/
 ```
 
 | Método | Endpoint | Descripción |
